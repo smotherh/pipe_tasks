@@ -163,20 +163,20 @@ class AlardLuptonSubtractTask(lsst.pipe.base.PipelineTask):
         convolvedTemplate = lsst.afw.image.MaskedImageF(science.getBBox())
         lsst.afw.math.convolve(convolvedTemplate, template.maskedImage, kernel, convolutionControl)
 
-        diff = lsst.afw.image.ExposureF(science, deep=True)
-        diff.maskedImage -= convolvedTemplate
-        diff.setWcs(science.getWcs())
-        diff.setFilterLabel(science.getFilterLabel())
+        difference = lsst.afw.image.ExposureF(science, deep=True)
+        difference.maskedImage -= convolvedTemplate
+        difference.setWcs(science.getWcs())
+        difference.setFilterLabel(science.getFilterLabel())
 
         matchedTemplate = self._makeExposure(convolvedTemplate, science)
         if self.config.doDecorrelation:
             # NOTE: This takes the unconvolved template!
-            decorrelated = self.decorrelate.run(science, template, diff, kernel,
-                                                templateMatched=True,
-                                                preConvMode=False,
-                                                preConvKernel=None,
-                                                spatiallyVarying=False)
-        return lsst.pipe.base.Struct(difference=decorrelated.correctedExposure,
+            difference = self.decorrelate.run(science, template, difference, kernel,
+                                              templateMatched=True,
+                                              preConvMode=False,
+                                              preConvKernel=None,
+                                              spatiallyVarying=False).correctedExposure
+        return lsst.pipe.base.Struct(difference=difference,
                                      matchedTemplate=matchedTemplate,
                                      matchedScience=science,
                                      )
@@ -191,20 +191,20 @@ class AlardLuptonSubtractTask(lsst.pipe.base.PipelineTask):
         convolvedScience = lsst.afw.image.MaskedImageF(science.getBBox())
         lsst.afw.math.convolve(convolvedScience, science.maskedImage, kernel, convolutionControl)
 
-        diff = lsst.afw.image.ExposureF(convolvedScience, science.getWcs())
-        diff.maskedImage -= template.maskedImage
-        diff.setPsf(template.psf)
-        diff.setWcs(science.getWcs())
-        diff.setFilterLabel(science.getFilterLabel())
+        difference = lsst.afw.image.ExposureF(convolvedScience, science.getWcs())
+        difference.maskedImage -= template.maskedImage
+        difference.setPsf(template.psf)
+        difference.setWcs(science.getWcs())
+        difference.setFilterLabel(science.getFilterLabel())
 
         matchedScience = self._makeExposure(convolvedScience, science)
         if self.config.doDecorrelation:
-            decorrelated = self.decorrelate.run(matchedScience, template, diff, kernel,
-                                                templateMatched=False,
-                                                preConvMode=False,
-                                                preConvKernel=None,
-                                                spatiallyVarying=False)
-        return lsst.pipe.base.Struct(difference=decorrelated.correctedExposure,
+            difference = self.decorrelate.run(matchedScience, template, difference, kernel,
+                                              templateMatched=False,
+                                              preConvMode=False,
+                                              preConvKernel=None,
+                                              spatiallyVarying=False).correctedExposure
+        return lsst.pipe.base.Struct(difference=difference,
                                      matchedTemplate=template,
                                      matchedScience=matchedScience,
                                      )
