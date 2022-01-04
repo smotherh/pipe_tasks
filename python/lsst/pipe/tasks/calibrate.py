@@ -85,7 +85,7 @@ class CalibrateConnections(pipeBase.PipelineTaskConnections, dimensions=("instru
 
     astromRefCat = cT.PrerequisiteInput(
         doc="Reference catalog to use for astrometry",
-        name="cal_ref_cat",
+        name="gaia_dr2_20200414",
         storageClass="SimpleCatalog",
         dimensions=("skypix",),
         deferLoad=True,
@@ -94,7 +94,7 @@ class CalibrateConnections(pipeBase.PipelineTaskConnections, dimensions=("instru
 
     photoRefCat = cT.PrerequisiteInput(
         doc="Reference catalog to use for photometric calibration",
-        name="cal_ref_cat",
+        name="ps1_pv3_3pi_20170110",
         storageClass="SimpleCatalog",
         dimensions=("skypix",),
         deferLoad=True,
@@ -310,6 +310,10 @@ class CalibrateConfig(pipeBase.PipelineTaskConfig, pipelineConnections=Calibrate
         self.detection.doTempLocalBackground = False
         self.deblend.maxFootprintSize = 2000
         self.measurement.plugins.names |= ["base_LocalPhotoCalib", "base_LocalWcs"]
+        self.astromRefObjLoader.anyFilterMapsToThis = "phot_g_mean"
+        # NOTE: these two lines are for gen2, and are only here for compatibility.
+        self.astromRefObjLoader.ref_dataset_name = "gaia_dr2_20200414"
+        self.photoRefObjLoader.ref_dataset_name = "ps1_pv3_3pi_20170110"
 
     def validate(self):
         super().validate()
