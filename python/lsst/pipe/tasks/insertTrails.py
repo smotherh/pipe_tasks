@@ -280,9 +280,20 @@ class InsertFakeTrailsTask(PipelineTask):
             mat = wcs.linearizePixelToSky(spt, geom.arcseconds).getMatrix()
             gsWCS = galsim.JacobianWCS(mat[0, 0], mat[0, 1], mat[1, 0], mat[1, 1])
 
+            # Check if trail or point source (ie. galsim.DeltaFunction)
+            # If trail, transform to sky-coordinates first, then rotate
+            if type(trailObj) is galsim.transform.Transformation:
+                # Rotate trail by Jacobian rotation component, so that the trail is
+                # rotated by the correct angle in image coordinates
+                jacScale, jacShear, jacTheta, doFlip = gsWCS.getDecomposition()  # (scale, shear, theta, flip)
+                if doFlip:
+                    trailObj = trailObj.transform(0.0, 1.0, 1.0, 0.0)  # Perform a reflection first, if needed
+                trailObj = trailObj.rotate(jacTheta).shear(jacShear).expand(jacScale)
+            trailObj = trailObj.withFlux(flux)
+
             # Compute normalized PSF image at center of trail
             psfArr = psf.computeKernelImage(center).array
-            apCorr = psf.computeApertureFlux(calibFluxRadius)
+            apCorr = psf.computeApertureFlux(calibFluxRadius, center)
             psfArr /= apCorr
 
             # Make galsim PSF image
@@ -290,7 +301,6 @@ class InsertFakeTrailsTask(PipelineTask):
 
             # Convolve a 'trail' galsim object with the PSF
             conv = galsim.Convolve(trailObj, gsPSF)
-            conv = conv.withFlux(flux)  # Set total flux in resulting image
 
             # Generate postage stamp of trail
             stampSize = conv.getGoodImageSize(gsWCS.minLinearScale())
@@ -309,7 +319,7 @@ class InsertFakeTrailsTask(PipelineTask):
                 subImg,
                 add_to_image=True,
                 offset=offset,
-                # wcs=gsWCS,
+                wcs=gsWCS,
                 method='no_pixel'
             )
 
@@ -370,17 +380,21 @@ class InsertFakeTrailsTask(PipelineTask):
             length = row['trail_length']
             angle = row['trail_angle']
 
+            # Do a delta function if length is 0
+            if length == 0.0:
+                trail = galsim.DeltaFunction()
+                #trail = trail.withFlux(1.0)
+                yield skyCoord, trail, flux
+                continue
+
             # Make a 'trail' GSObject
-            gs_length = length*pixelscale  # Transform length to arcseconds
+            gs_length = length # *pixelscale  # Transform length to arcseconds
             gs_thickness = 1e-6  # Make a 'thin' box profile
             trail = galsim.Box(gs_length, gs_thickness)
 
             # Rotate box through theta
             theta = galsim.Angle(angle * galsim.radians)  # Make galsim Angle
             trail = trail.rotate(theta)
-
-            # Make sure flux is 1 (will be set after PSF convolution)
-            trail = trail.withFlux(flux)
 
             yield skyCoord, trail, flux
 
