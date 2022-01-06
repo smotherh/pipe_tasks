@@ -48,7 +48,7 @@ class ProcessCcdWithFakeTrailsConnections(PipelineTaskConnections,
 
     fakeCat = cT.Input(
         doc="Catalog of fake sources to be added",
-        name="fake_trails_catalog_inst",
+        name="fake_trails_catalog",
         storageClass="DataFrame",
         dimensions=("instrument",)
     )
