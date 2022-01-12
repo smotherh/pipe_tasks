@@ -74,7 +74,7 @@ class MakeWarpedTemplateTaskConnections(pipeBase.PipelineTaskConnections,
 
     def __init__(self, *, config=None):
         super().__init__(config=config)
-        if config.coaddName == 'dcr':
+        if self.config.useDcrCoadds:
             self.inputs.remove("coaddExposures")
         else:
             self.inputs.remove("dcrCoadds")
@@ -84,10 +84,10 @@ class MakeWarpedTemplateConfig(pipeBase.PipelineTaskConfig,
                                pipelineConnections=MakeWarpedTemplateTaskConnections):
     """Config for MakeWarpedTemplateTask.
     """
-    coaddName = pexConfig.Field(
-        doc="coadd name: typically one of deep, goodSeeing, or dcr",
-        dtype=str,
-        default="deep",
+    useDcrCoadds = pexConfig.Field(
+        doc="Use DCR coadds to make the template.",
+        default=False,
+        dtype=bool
     )
     getTemplate = pexConfig.ConfigurableField(
         target=GetCoaddAsTemplateTask,
@@ -99,8 +99,9 @@ class MakeWarpedTemplateConfig(pipeBase.PipelineTaskConfig,
     def validate(self):
         pexConfig.Config.validate(self)
         if hasattr(self.getTemplate, "coaddName"):
-            if self.getTemplate.coaddName != self.coaddName:
-                raise ValueError("Mis-matched coaddName and getTemplate.coaddName in the config.")
+            if (self.useDcrCoadds and self.getTemplate.coaddName != "dcr") or \
+                    (not self.useDcrCoadds and self.getTemplate.coaddName == "dcr"):
+                raise ValueError("Mis-matched `getTemplate.coaddName` and `useDcrCoadds` values in config.")
 
 
 class MakeWarpedTemplateTask(pipeBase.PipelineTask):
@@ -121,7 +122,7 @@ class MakeWarpedTemplateTask(pipeBase.PipelineTask):
                    outputRefs: pipeBase.OutputQuantizedConnection):
         inputs = butlerQC.get(inputRefs)
         self.log.info("Processing %s", butlerQC.quantum.dataId)
-        if self.config.coaddName == 'dcr':
+        if self.config.useDcrCoadds:
             templateExposures = inputRefs.dcrCoadds
         else:
             templateExposures = inputRefs.coaddExposures
