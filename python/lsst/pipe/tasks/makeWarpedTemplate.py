@@ -138,6 +138,6 @@ class MakeWarpedTemplateTask(pipeBase.PipelineTask):
                                                      templateExposure,
                                                      destBBox=scienceExposure.getBBox())
         templateExposure.setPsf(psfWarped)
-        output = pipeBase.Struct(warpedExposure=templateExposure)
+        output = pipeBase.Struct(outputExposure=templateExposure)
 
         butlerQC.put(output, outputRefs)
