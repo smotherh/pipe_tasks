@@ -115,12 +115,17 @@ class AlardLuptonSubtractConfig(lsst.pipe.base.PipelineTaskConfig,
 
     measureTemplatePsf = lsst.pex.config.Field(
         dtype=bool,
-        default=True,
+        default=False,
         doc="Measure the PSF of the template before constructing the matching kernel."
     )
     measurePsf = lsst.pex.config.ConfigurableField(
         target=MeasurePsfTask,
         doc="Measure PSF",
+    )
+    forceConvolveTemplate = lsst.pex.config.Field(
+        dtype=bool,
+        default=True,
+        doc="Always convolve the template, even if the science image has better seeing."
     )
 
     def setDefaults(self):
@@ -185,12 +190,18 @@ class AlardLuptonSubtractTask(lsst.pipe.base.PipelineTask):
         templatePsfSize = self._getFwhmPix(template)
         self.log.info("Science PSF size: %f", sciencePsfSize)
         self.log.info("Template PSF size: %f", templatePsfSize)
-        if sciencePsfSize < templatePsfSize:
-            self.log.info("Template PSF size is the greater, convolving science image.")
-            subtractRes = self.convolveScienceSubtract(template, science, kernelSources, convolutionControl)
-        else:
-            self.log.info("Science PSF size is the greater, convolving template image.")
+        if self.config.forceConvolveTemplate:
+            self.log.info("forceConvolveTemplate=True is set, convolving template image.")
             subtractRes = self.convolveTemplateSubtract(template, science, kernelSources, convolutionControl)
+        else:
+            if sciencePsfSize < templatePsfSize:
+                self.log.info("Template PSF size is the greater, convolving science image.")
+                subtractRes = self.convolveScienceSubtract(template, science,
+                                                           kernelSources, convolutionControl)
+            else:
+                self.log.info("Science PSF size is the greater, convolving template image.")
+                subtractRes = self.convolveTemplateSubtract(template, science,
+                                                            kernelSources, convolutionControl)
         if self.config.doWriteScoreExp:
             scoreExposure = self.preconvolveSubtract(template, preconvolvedScience, preconvolveKernel,
                                                      kernelSources, convolutionControl)
