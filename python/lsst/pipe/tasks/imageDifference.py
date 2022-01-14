@@ -30,8 +30,6 @@ import lsst.pex.config
 import lsst.pipe.base
 from lsst.pipe.base import connectionTypes
 
-from .measurePsf import MeasurePsfTask
-
 __all__ = ["AlardLuptonSubtractConfig", "AlardLuptonSubtractTask"]
 
 
@@ -113,15 +111,6 @@ class AlardLuptonSubtractConfig(lsst.pipe.base.PipelineTaskConfig,
         doc="Write AL likelihood or Zogy score exposure?"
     )
 
-    measureTemplatePsf = lsst.pex.config.Field(
-        dtype=bool,
-        default=False,
-        doc="Measure the PSF of the template before constructing the matching kernel."
-    )
-    measurePsf = lsst.pex.config.ConfigurableField(
-        target=MeasurePsfTask,
-        doc="Measure PSF",
-    )
     forceConvolveTemplate = lsst.pex.config.Field(
         dtype=bool,
         default=True,
@@ -149,9 +138,6 @@ class AlardLuptonSubtractTask(lsst.pipe.base.PipelineTask):
         self.makeSubtask("decorrelate")
         self.makeSubtask("makeKernel")
 
-        self.schema = lsst.afw.table.SourceTable.makeMinimalSchema()
-        self.makeSubtask("measurePsf", schema=self.schema)
-
     @lsst.utils.inheritDoc(lsst.pipe.base.PipelineTask)
     def runQuantum(self, butlerQC: lsst.pipe.base.ButlerQuantumContext,
                    inputRefs: lsst.pipe.base.InputQuantizedConnection,
@@ -174,13 +160,6 @@ class AlardLuptonSubtractTask(lsst.pipe.base.PipelineTask):
         kernelSources = self.makeKernel.selectKernelSources(template, science,
                                                             candidateList=sources,
                                                             preconvolved=False)
-
-        if self.config.measureTemplatePsf:
-            templatePsfSize0 = self._getFwhmPix(template)
-            self.log.info("Template PSF size prior to measurement: %f", templatePsfSize0)
-            exposureIdInfo = lsst.obs.base.ExposureIdInfo()
-            self.measurePsf.run(exposure=template, sources=sources, matches=None,
-                                expId=exposureIdInfo.expId)
 
         sciencePsfSize = self._getFwhmPix(science)
         templatePsfSize = self._getFwhmPix(template)
