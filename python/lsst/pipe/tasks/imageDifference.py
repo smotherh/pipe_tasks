@@ -109,7 +109,7 @@ class AlardLuptonSubtractConfig(lsst.pipe.base.PipelineTaskConfig,
 
     doWriteScoreExp = lsst.pex.config.Field(
         dtype=bool,
-        default=True,
+        default=False,
         doc="Write AL likelihood or Zogy score exposure?"
     )
 
@@ -135,8 +135,6 @@ class AlardLuptonSubtractConfig(lsst.pipe.base.PipelineTaskConfig,
         self.makeKernel.kernel.active.fitForBackground = True
         self.makeKernel.kernel.active.spatialKernelOrder = 1
         self.makeKernel.kernel.active.spatialBgOrder = 2
-
-        # self.measurePsf.starSelector.usesMatches = False
 
 
 class AlardLuptonSubtractTask(lsst.pipe.base.PipelineTask):
@@ -172,12 +170,10 @@ class AlardLuptonSubtractTask(lsst.pipe.base.PipelineTask):
         convolutionControl = lsst.afw.math.ConvolutionControl()
         convolutionControl.setDoNormalize(False)
 
-        preconvolvedScience, preconvolveKernel = self.preconvolveScience(science, convolutionControl)
-
         # This could become a PipelineTask that produces kernelSources as output
-        kernelSources = self.makeKernel.selectKernelSources(template, preconvolvedScience,
+        kernelSources = self.makeKernel.selectKernelSources(template, science,
                                                             candidateList=sources,
-                                                            preconvolved=True)
+                                                            preconvolved=False)
 
         if self.config.measureTemplatePsf:
             templatePsfSize0 = self._getFwhmPix(template)
@@ -203,6 +199,7 @@ class AlardLuptonSubtractTask(lsst.pipe.base.PipelineTask):
                 subtractRes = self.convolveTemplateSubtract(template, science,
                                                             kernelSources, convolutionControl)
         if self.config.doWriteScoreExp:
+            preconvolvedScience, preconvolveKernel = self.preconvolveScience(science, convolutionControl)
             scoreExposure = self.preconvolveSubtract(template, preconvolvedScience, preconvolveKernel,
                                                      kernelSources, convolutionControl)
             subtractRes.scoreExposure = scoreExposure
