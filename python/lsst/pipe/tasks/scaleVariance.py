@@ -65,7 +65,7 @@ class ScaleVarianceTask(Task):
         self.makeSubtask("background")
 
     @contextmanager
-    def subtractedBackground(self, maskedImage):
+    def subtractedBackground(self, maskedImage, refMaskedImage=None):
         """Context manager for subtracting the background
 
         We need to subtract the background so that the entire image
@@ -79,6 +79,9 @@ class ScaleVarianceTask(Task):
         ----------
         maskedImage : `lsst.afw.image.MaskedImage`
             Image+mask+variance to have background subtracted and restored.
+        refMaskedImage : `lsst.afw.image.MaskedImage`, optional
+            Image from which to determine which pixels to mask.
+            If None, it defaults to ``maskedImage``.
 
         Returns
         -------
@@ -88,12 +91,19 @@ class ScaleVarianceTask(Task):
         bg = self.background.fitBackground(maskedImage)
         bgImage = bg.getImageF(self.background.config.algorithm, self.background.config.undersampleStyle)
         maskedImage -= bgImage
+        if refMaskedImage:
+            bgRef = self.background.fitBackground(refMaskedImage)
+            bgImageRef = bgRef.getImageF(self.background.config.algorithm,
+                                         self.background.config.undersampleStyle)
+            refMaskedImage -= bgImageRef
         try:
             yield
         finally:
             maskedImage += bgImage
+            if refMaskedImage:
+                refMaskedImage += bgImageRef
 
-    def run(self, maskedImage):
+    def run(self, maskedImage, refMaskedImage=None):
         """Rescale the variance in a maskedImage in place.
 
         Parameters
@@ -101,6 +111,9 @@ class ScaleVarianceTask(Task):
         maskedImage :  `lsst.afw.image.MaskedImage`
             Image for which to determine the variance rescaling factor. The image
             is modified in place.
+        refMaskedImage : `lsst.afw.image.MaskedImage`
+            Image to determine which pixels to mask when determining variance.
+            If None, it defaults to ``maskedImage``.
 
         Returns
         -------
@@ -119,12 +132,15 @@ class ScaleVarianceTask(Task):
         it is over the ``config.limit`` threshold. In this case, the image-based
         method is applied.
         """
-        with self.subtractedBackground(maskedImage):
-            factor = self.pixelBased(maskedImage)
+        if refMaskedImage is None:
+            refMaskedImage = maskedImage
+
+        with self.subtractedBackground(maskedImage, refMaskedImage):
+            factor = self.pixelBased(maskedImage, refMaskedImage)
             if factor > self.config.limit:
                 self.log.warning("Pixel-based variance rescaling factor (%f) exceeds configured limit (%f); "
                                  "trying image-based method", factor, self.config.limit)
-                factor = self.imageBased(maskedImage)
+                factor = self.imageBased(maskedImage, refMaskedImage)
                 if factor > self.config.limit:
                     raise RuntimeError("Variance rescaling factor (%f) exceeds configured limit (%f)" %
                                        (factor, self.config.limit))
@@ -132,13 +148,16 @@ class ScaleVarianceTask(Task):
             maskedImage.variance *= factor
         return factor
 
-    def computeScaleFactors(self, maskedImage):
+    def computeScaleFactors(self, maskedImage, refMaskedImage=None):
         """Calculate and return both variance scaling factors without modifying the image.
 
         Parameters
         ----------
         maskedImage :  `lsst.afw.image.MaskedImage`
             Image for which to determine the variance rescaling factor.
+        refMaskedImage : `lsst.afw.image.MaskedImage`, optional
+            Image from which to determine which pixels to mask.
+            If None, it defaults to ``maskedImage``.
 
         Returns
         -------
@@ -148,12 +167,12 @@ class ScaleVarianceTask(Task):
           - ``imageFactor`` : `float` The image based variance rescaling factor
             or 1 if all pixels are masked or invalid.
         """
-        with self.subtractedBackground(maskedImage):
-            pixelFactor = self.pixelBased(maskedImage)
-            imageFactor = self.imageBased(maskedImage)
+        with self.subtractedBackground(maskedImage, refMaskedImage):
+            pixelFactor = self.pixelBased(maskedImage, refMaskedImage)
+            imageFactor = self.imageBased(maskedImage, refMaskedImage)
         return Struct(pixelFactor=pixelFactor, imageFactor=imageFactor)
 
-    def pixelBased(self, maskedImage):
+    def pixelBased(self, maskedImage, refMaskedImage=None):
         """Determine the variance rescaling factor from pixel statistics
 
         We calculate SNR = image/sqrt(variance), and the distribution
@@ -170,6 +189,9 @@ class ScaleVarianceTask(Task):
         ----------
         maskedImage : `lsst.afw.image.MaskedImage`
             Image for which to determine the variance rescaling factor.
+        refMaskedImage : `lsst.afw.image.MaskedImage`, optional
+            Image from which to determine which pixels to mask.
+            If None, it defaults to ``maskedImage``.
 
         Returns
         -------
@@ -177,11 +199,13 @@ class ScaleVarianceTask(Task):
             Variance rescaling factor or 1 if all pixels are masked or non-finite.
 
         """
-        maskVal = maskedImage.mask.getPlaneBitMask(self.config.maskPlanes)
-        isGood = (((maskedImage.mask.array & maskVal) == 0)
-                  & np.isfinite(maskedImage.image.array)
-                  & np.isfinite(maskedImage.variance.array)
-                  & (maskedImage.variance.array > 0))
+        if refMaskedImage is None:
+            refMaskedImage = maskedImage
+        maskVal = refMaskedImage.mask.getPlaneBitMask(self.config.maskPlanes)
+        isGood = (((refMaskedImage.mask.array & maskVal) == 0)
+                  & np.isfinite(refMaskedImage.image.array)
+                  & np.isfinite(refMaskedImage.variance.array)
+                  & (refMaskedImage.variance.array > 0))
 
         nGood = np.sum(isGood)
         self.log.debug("Number of selected background pixels: %d of %d.", nGood, isGood.size)
@@ -195,7 +219,7 @@ class ScaleVarianceTask(Task):
         stdev = 0.74*(q3 - q1)
         return stdev**2
 
-    def imageBased(self, maskedImage):
+    def imageBased(self, maskedImage, refMaskedImage=None):
         """Determine the variance rescaling factor from image statistics
 
         We calculate average(SNR) = stdev(image)/median(variance), and
@@ -212,17 +236,23 @@ class ScaleVarianceTask(Task):
         ----------
         maskedImage :  `lsst.afw.image.MaskedImage`
             Image for which to determine the variance rescaling factor.
+        refMaskedImage : `lsst.afw.image.MaskedImage`, optional
+            Image from which to determine which pixels to mask.
+            If None, it defaults to ``maskedImage``.
 
         Returns
         -------
         factor : `float`
             Variance rescaling factor or 1 if all pixels are masked or non-finite.
         """
-        maskVal = maskedImage.mask.getPlaneBitMask(self.config.maskPlanes)
-        isGood = (((maskedImage.mask.array & maskVal) == 0)
-                  & np.isfinite(maskedImage.image.array)
-                  & np.isfinite(maskedImage.variance.array)
-                  & (maskedImage.variance.array > 0))
+        if refMaskedImage is None:
+            refMaskedImage = maskedImage
+
+        maskVal = refMaskedImage.mask.getPlaneBitMask(self.config.maskPlanes)
+        isGood = (((refMaskedImage.mask.array & maskVal) == 0)
+                  & np.isfinite(refMaskedImage.image.array)
+                  & np.isfinite(refMaskedImage.variance.array)
+                  & (refMaskedImage.variance.array > 0))
         nGood = np.sum(isGood)
         self.log.debug("Number of selected background pixels: %d of %d.", nGood, isGood.size)
         if nGood < 2:
